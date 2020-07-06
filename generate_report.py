@@ -22,7 +22,6 @@ def main(argv):
     projects = {}
     maniphest_tasks = {}
     maniphest_task_ids = []
-    project_task_map = {}
     task_transaction_map = {}
 
     try:
@@ -99,6 +98,9 @@ def main(argv):
             for maniphest_task_id, task_transaction_list in dict(task_transaction_details).items():
                 revisions_tagged = []
                 status_updates = []
+                differential_revisions_map = {}
+                revision_inlinecomments_map = {}
+                revision_phids_to_be_queried = {}
                 for task_transaction_detail in task_transaction_list:
                     if task_transaction_detail is not None and type(task_transaction_detail) == dict \
                             and task_transaction_detail['transactionType'] in ['core:edge','status']:
@@ -110,7 +112,7 @@ def main(argv):
                                         revisions_tagged.append(task_edge)
                         elif task_transaction_detail['transactionType'] == 'status':
                             status_updates.append(task_transaction_detail)
-                revision_phids_to_be_queried = {}
+
                 for i in range(len(revisions_tagged)):
                     current_key = 'constraints[phids][' + str(i) + ']'
                     revision_phids_to_be_queried[current_key] = revisions_tagged[i]
@@ -123,8 +125,7 @@ def main(argv):
                         print("Error parsing differential revision response:", repr(e))
 
                     if differential_revisions_details is not None or type(differential_revisions_details) == list:
-                        differential_revisions_map = {}
-                        revision_inlinecomments_map = {}
+
                         for differential_revision_details in list(differential_revisions_details):
                             if differential_revision_details is not None and type(differential_revision_details) == dict:
                                 differential_revision_details = dict(differential_revision_details)
@@ -132,7 +133,7 @@ def main(argv):
                                     if 'status' in differential_revision_details['fields'] \
                                             and differential_revision_details['fields']['status'] is not None \
                                             and differential_revision_details['fields']['status']['value'] != 'abandoned':
-                                        revision_id = 'D'+differential_revision_details['id']
+                                        revision_id = 'D'+str(differential_revision_details['id'])
                                         if revision_id not in differential_revisions_map:
                                             differential_revisions_map[revision_id] = differential_revision_details
 
@@ -184,16 +185,16 @@ def main(argv):
                                         "author_wise_count":revision_comments_author_map
                                     }
 
-                        if maniphest_task_id not in task_transaction_map:
-                            task_transaction_map[maniphest_task_id] = {
-                                'statuses': status_updates,
-                                'revisions': differential_revisions_map,
-                                'comments':revision_inlinecomments_map
-                            }
+                if maniphest_task_id not in task_transaction_map:
+                    task_transaction_map[maniphest_task_id] = {
+                        'statuses': status_updates,
+                        'revisions': differential_revisions_map,
+                        'comments':revision_inlinecomments_map
+                    }
                 maniphest_tasks[maniphest_task_id]['transactions'] = task_transaction_map[maniphest_task_id]
 
-            if project_detail['phid'] not in project_task_map:
-                project_task_map[project_detail['phid']]['tasks'] = maniphest_tasks
+            projects[project_detail['phid']]['tasks'] = maniphest_tasks
+            construct_csv(projects)
 
 
 if __name__ == '__main__':
@@ -202,4 +203,5 @@ if __name__ == '__main__':
         sys.exit(2)
 
     main(sys.argv[1:])
+    phabricator.session.close()
 
