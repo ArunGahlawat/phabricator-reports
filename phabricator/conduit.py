@@ -1,4 +1,4 @@
-import config,urllib.parse,sys,phabricator
+import config,urllib.parse,sys,phabricator,json
 
 
 class Common:
@@ -137,3 +137,61 @@ class Transaction:
             phabricator.session.close()
             sys.exit(2)
         return response.json()
+
+
+class User:
+    def __init__(self):
+        self.search_endpoint = "/api/user.search"
+        self.headers = {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        }
+
+    def search(self,user_dict):
+        data = user_dict
+        data['api.token'] = config.CONDUIT_TOKEN
+        url = config.PHABRICATOR_HOST + self.search_endpoint
+        data = urllib.parse.urlencode(data)
+        try:
+            response = phabricator.session.post(url, data=data, headers=self.headers)
+        except Exception as e:
+            print('Error in sending request', repr(e))
+            phabricator.session.close()
+            sys.exit(2)
+        is_valid = Common.validate_conduit_response(response)
+        if not is_valid:
+            phabricator.session.close()
+            sys.exit(2)
+        return response.json()
+
+    def get_user_details(self,user_phid):
+        with open("cache/user_map.json",'r') as f:
+            user_details = json.load(f)
+        if user_details is not None and issubclass(type(user_details),dict) and len(dict(user_details)) > 0 and user_phid in dict(user_details):
+            return dict(user_details)[user_phid]
+        else:
+            user_dict = {}
+            current_key = 'constraints[phids][0]'
+            user_dict[current_key] = user_phid
+            user_search_details = None
+            try:
+                user_search_response = self.search(user_dict)
+                user_search_details = user_search_response['data']
+            except Exception as e:
+                print("Couldn't fetch user details:",repr(e))
+            if user_search_details is not None or type(user_search_details) == list:
+                for user_details_queried in list(user_search_details):
+                    if type(user_details_queried) == dict and "fields" in user_details_queried \
+                            and "username" in dict(user_details_queried)['fields'] and dict(user_details_queried)['fields']['username'] is not None:
+                        user_details[user_details_queried['fields']['phid']] = {
+                            'username': user_details_queried['fields']['username'],
+                            'realName': user_details_queried['fields']['realName']
+                        }
+                        with open("cache/user_map.json",'w') as f:
+                            json.dump(user_details, f, indent=4, sort_keys=True)
+                        return user_details[user_phid]
+
+
+
+
+
+

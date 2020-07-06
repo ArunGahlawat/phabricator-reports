@@ -13,6 +13,34 @@ def print_help():
 
 
 def construct_csv(project_task_map):
+    report_to_be_exported = {}
+    with open('reports/export.json','r') as f:
+        projects = json.load(f)
+    if projects is not None and issubclass(type(projects),dict) and len(projects) > 0:
+        for project in dict(projects).values():
+            if "tasks" in project and project['tasks'] is not None:
+                for project_task in dict(project['tasks']).values():
+                    if "details" in project_task and project_task['details'] is not None:
+                        project_task_details = project_task['details']
+                        if project_task_details is not None and type(project_task_details) == dict:
+                            report_to_be_exported['Phab ID'] = project_task_details['objectName']
+                            report_to_be_exported['Title'] = project_task_details['title']
+                            report_to_be_exported['Task URL'] = project_task_details['uri']
+                            report_to_be_exported['Assigned To'] = phabricator.conduit.User.search(project_task_details['ownerPHID'])
+                    if "transactions" in project and project['transactions'] is not None:
+                        if "statuses" in  project['transactions'] and  project['transactions']['statuses'] is not None:
+                            for task_status in  list(project['transactions']['statuses']):
+                                task_status = dict(task_status)
+                                #if task_status['oldValue'] is not None and task_status['oldValue']
+
+
+
+
+
+
+
+
+def export_json(project_task_map):
     with open('reports/export.json', 'w') as f:
         json.dump(project_task_map, f, indent=4, sort_keys=True)
 
@@ -202,6 +230,7 @@ if __name__ == '__main__':
         print("Phabricator host url or conduit api token not provided or not correct. Please update config.py")
         sys.exit(2)
 
-    main(sys.argv[1:])
+    #main(sys.argv[1:])
+    construct_csv('temp')
     phabricator.session.close()
 
