@@ -111,3 +111,29 @@ class Maniphest:
             sys.exit(2)
         return response.json()
 
+
+class Transaction:
+    def __init__(self):
+        self.search_endpoint = "/api/transaction.search"
+        self.headers = {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        }
+
+    def search(self,revision_id):
+        data = {
+            'api.token': config.CONDUIT_TOKEN,
+            'objectIdentifier':revision_id
+        }
+        url = config.PHABRICATOR_HOST + self.search_endpoint
+        data = urllib.parse.urlencode(data)
+        try:
+            response = phabricator.session.post(url,data=data,headers=self.headers)
+        except Exception as e:
+            print('Error in sending request',repr(e))
+            phabricator.session.close()
+            sys.exit(2)
+        is_valid = Common.validate_conduit_response(response)
+        if not is_valid:
+            phabricator.session.close()
+            sys.exit(2)
+        return response.json()
