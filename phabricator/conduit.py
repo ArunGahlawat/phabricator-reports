@@ -25,7 +25,8 @@ class Project:
     def search(self,project_name):
         data = {
             'api.token': config.CONDUIT_TOKEN,
-            'constraints[name]':project_name
+            'constraints[name]':project_name,
+            'limit': '100'
         }
         url = config.PHABRICATOR_HOST + self.search_endpoint
         data = urllib.parse.urlencode(data)
@@ -52,6 +53,7 @@ class Differential:
     def search_revisions(self, revision_phid_dict):
         data = revision_phid_dict
         data['api.token'] = config.CONDUIT_TOKEN
+        data['limit'] = '100'
         url = config.PHABRICATOR_HOST + self.search_endpoint
         data = urllib.parse.urlencode(data)
         try:
@@ -78,7 +80,8 @@ class Maniphest:
     def query(self,project_name):
         data = {
             'api.token': config.CONDUIT_TOKEN,
-            'projectPHIDs[0]':project_name
+            'projectPHIDs[0]': project_name,
+            'limit': '100'
         }
         url = config.PHABRICATOR_HOST + self.query_endpoint
         data = urllib.parse.urlencode(data)
@@ -97,6 +100,7 @@ class Maniphest:
     def get_transactions(self,task_id_dict):
         data = task_id_dict
         data['api.token'] = config.CONDUIT_TOKEN
+
         url = config.PHABRICATOR_HOST + self.gettasktransactions_endpoint
         data = urllib.parse.urlencode(data)
         try:
@@ -122,7 +126,8 @@ class Transaction:
     def search(self,revision_id):
         data = {
             'api.token': config.CONDUIT_TOKEN,
-            'objectIdentifier':revision_id
+            'objectIdentifier':revision_id,
+            'limit': '100'
         }
         url = config.PHABRICATOR_HOST + self.search_endpoint
         data = urllib.parse.urlencode(data)
@@ -149,6 +154,7 @@ class User:
     def search(self,user_dict):
         data = user_dict
         data['api.token'] = config.CONDUIT_TOKEN
+        data['limit'] = '100'
         url = config.PHABRICATOR_HOST + self.search_endpoint
         data = urllib.parse.urlencode(data)
         try:
@@ -164,6 +170,7 @@ class User:
         return response.json()
 
     def get_user_details(self,user_phid):
+        user_details = {}
         with open("cache/user_map.json",'r') as f:
             user_details = json.load(f)
         if user_details is not None and issubclass(type(user_details),dict) and len(dict(user_details)) > 0 and user_phid in dict(user_details):
@@ -175,14 +182,15 @@ class User:
             user_search_details = None
             try:
                 user_search_response = self.search(user_dict)
-                user_search_details = user_search_response['data']
+                user_search_details = user_search_response['result']['data']
             except Exception as e:
                 print("Couldn't fetch user details:",repr(e))
+                return ""
             if user_search_details is not None or type(user_search_details) == list:
                 for user_details_queried in list(user_search_details):
                     if type(user_details_queried) == dict and "fields" in user_details_queried \
                             and "username" in dict(user_details_queried)['fields'] and dict(user_details_queried)['fields']['username'] is not None:
-                        user_details[user_details_queried['fields']['phid']] = {
+                        user_details[user_details_queried['phid']] = {
                             'username': user_details_queried['fields']['username'],
                             'realName': user_details_queried['fields']['realName']
                         }

@@ -131,4 +131,6 @@ dmypy.json
 config.py
 Config.py
 *.pyc
-/reports/export.json
+/reports/*.json
+/reports/*.csv
+/cache/*.json

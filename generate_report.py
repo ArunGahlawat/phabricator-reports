@@ -1,4 +1,5 @@
-import sys,getopt, config, requests, phabricator.conduit, json,time
+import sys,getopt, config, requests, phabricator.conduit, json,time,csv,pytz
+from datetime import datetime,date
 
 
 def print_help():
@@ -13,19 +14,43 @@ def print_help():
 
 
 def format_datetime(epoch):
-    return time.strftime(config.DATE_TIME_FORMAT,time.localtime(epoch))
+    return time.strftime(config.DATE_TIME_FORMAT,time.localtime(int(epoch)))
 
 
-def construct_csv(project_task_map):
-    report_to_be_exported = {}
-    statuses_to_ignore = config.STATUSES_TO_IGNORE
-    subtype_to_ignore = config.SUBTYPE_TO_IGNORE
-    waiting_for_user = {'start': [], 'end': []}
-    problem_solving = {'start': [], 'end': []}
-    dev_in_progress = {'start': [], 'end': []}
-    review_in_progress = {'start': [], 'end': []}
-    qa_in_progress = {'start': [], 'end': []}
-    promoted_to_staging = {'start': [], 'end': []}
+def get_csv_length(filename):
+    length = 0
+    try:
+        with open(filename, 'r') as csvfile:
+            reader = csv.reader(csvfile)
+            for row in reader:
+                length += 1
+            return length
+    except FileNotFoundError as e:
+        f = open(filename, 'x')
+        f.close()
+        return length
+
+
+def write_in_csv(filename, data, source='dict', write_mode='a'):
+    if data is None:
+        return
+    len = get_csv_length(filename)
+    with open(filename, write_mode) as csvfile:
+        if source == 'list':
+            writer = csv.writer(csvfile)
+        else:
+            writer = csv.DictWriter(csvfile, fieldnames=data.keys())
+        if len == 0 and source == 'dict':
+            writer.writeheader()
+        writer.writerow(data)
+
+
+def construct_csv():
+    report_to_be_exported = []
+    today = datetime.now()
+    report_date = today.strftime(config.DATE_TIME_FORMAT)
+    statuses_to_ignore = list(config.STATUSES_TO_IGNORE)
+    subtype_to_ignore = list(config.SUBTYPE_TO_IGNORE)
 
     with open('reports/export.json', 'r') as f:
         projects = json.load(f)
@@ -33,31 +58,170 @@ def construct_csv(project_task_map):
         for project in dict(projects).values():
             if "tasks" in project and project['tasks'] is not None:
                 for project_task in dict(project['tasks']).values():
+                    task_details_to_be_exported = {}
+                    waiting_for_user = {'start': [], 'end': []}
+                    ps_in_progress = {'start': [], 'end': []}
+                    dev_in_progress = {'start': [], 'end': []}
+                    review_in_progress = {'start': [], 'end': []}
+                    qa_in_progress = {'start': [], 'end': []}
+                    promoted_to_staging = {'start': [], 'end': []}
+                    task_revision_details = []
+                    task_revision_author_details = []
+                    task_revision_reviewer_comment_details = []
+                    task_revision_total_comment_details = []
+
+                    qa_cycles = 0
+                    review_cycles = 0
+                    ps_cycles = 0
+                    product_requirement_cycles = 0
+                    release_date = ""
                     if "details" in project_task and project_task['details'] is not None:
                         project_task_details = project_task['details']
                         if project_task_details is not None and type(project_task_details) == dict:
                             if "status" in project_task_details and project_task_details["status"] is not None and project_task_details["status"] in statuses_to_ignore:
                                 continue
-                            if "status" in project_task_details and project_task_details["status"] is not None and project_task_details["status"] in statuses_to_ignore:
+                            if "subtype" in project_task_details and project_task_details["subtype"] is not None and project_task_details["subtype"] in subtype_to_ignore:
                                 continue
-                            report_to_be_exported['Phab ID'] = project_task_details['objectName']
-                            report_to_be_exported['Title'] = project_task_details['title']
-                            report_to_be_exported['Task URL'] = project_task_details['uri']
-                            report_to_be_exported['Assigned To'] = phabricator.conduit.User.search(project_task_details['ownerPHID'])
+
+                            task_details_to_be_exported['Phab ID'] = project_task_details['objectName']
+                            task_details_to_be_exported['Title'] = project_task_details['title']
+                            task_details_to_be_exported['Task URL'] = project_task_details['uri']
+                            if "subtype" in project_task_details:
+                                task_details_to_be_exported['Task Type'] = str(project_task_details['subtype']).title()
+                            else:
+                                task_details_to_be_exported['Task Type'] = 'Task'
+                            task_details_to_be_exported['Current Status'] = project_task_details['statusName']
+
+                            user_details = phabricator.conduit.User.get_user_details(phabricator.conduit.User(), project_task_details['ownerPHID'])
+                            if user_details is not None and user_details != "" and type(user_details) == dict:
+                                task_details_to_be_exported['Assigned To'] = user_details['realName']
+                            else:
+                                task_details_to_be_exported['Assigned To'] = project_task_details['ownerPHID']
+
                             waiting_for_user['start'].append(format_datetime(project_task_details['dateCreated']))
-                    if "transactions" in project and project['transactions'] is not None:
-                        if "statuses" in project['transactions'] and  project['transactions']['statuses'] is not None:
-                            task_statuses = list(project['transactions']['statuses'])
-                            for i in range(len(task_statuses),0,-1):
-                                task_status_details = task_statuses[i]
-                                if "oldValue" in task_status_details and task_status_details['oldValue'] is not None:
-                                    if task_status_details['oldValue'] in ['open','waitingForUser']:
-                                        waiting_for_user['end'].append(format_datetime(task_status_details['dateCreated']))
+
+                            if "transactions" in project_task and project_task['transactions'] is not None:
+                                if "statuses" in project_task['transactions'] and project_task['transactions']['statuses'] is not None:
+                                    task_statuses = list(project_task['transactions']['statuses'])
+                                    for i in range(len(task_statuses)-1, -1, -1):
+                                        task_status_details = task_statuses[i]
+                                        if "oldValue" in task_status_details and task_status_details['oldValue'] is not None:
+                                            if task_status_details['oldValue'] in ['open','waitingForUser']:
+                                                waiting_for_user['end'].append(format_datetime(task_status_details['dateCreated']))
+                                            elif task_status_details['oldValue'] in ['psInProgress']:
+                                                ps_in_progress['end'].append(format_datetime(task_status_details['dateCreated']))
+                                            elif task_status_details['oldValue'] in ['devInProgress']:
+                                                dev_in_progress['end'].append(format_datetime(task_status_details['dateCreated']))
+                                            elif task_status_details['oldValue'] in ['reviewInProgress']:
+                                                review_in_progress['end'].append(format_datetime(task_status_details['dateCreated']))
+                                            elif task_status_details['oldValue'] in ['qaInProgress']:
+                                                qa_in_progress['end'].append(format_datetime(task_status_details['dateCreated']))
+                                            elif task_status_details['oldValue'] in ['promotedToStaging','qaVerified']:
+                                                promoted_to_staging['end'].append(format_datetime(task_status_details['dateCreated']))
+
+                                        if "newValue" in task_status_details and task_status_details['newValue'] is not None:
+                                            if task_status_details['newValue'] in ['open','waitingForUser']:
+                                                waiting_for_user['start'].append(format_datetime(task_status_details['dateCreated']))
+                                            elif task_status_details['newValue'] in ['psInProgress']:
+                                                ps_in_progress['start'].append(format_datetime(task_status_details['dateCreated']))
+                                            elif task_status_details['newValue'] in ['devInProgress']:
+                                                dev_in_progress['start'].append(format_datetime(task_status_details['dateCreated']))
+                                            elif task_status_details['newValue'] in ['reviewInProgress']:
+                                                review_in_progress['start'].append(format_datetime(task_status_details['dateCreated']))
+                                            elif task_status_details['newValue'] in ['qaInProgress']:
+                                                qa_in_progress['start'].append(format_datetime(task_status_details['dateCreated']))
+                                            elif task_status_details['newValue'] in ['promotedToStaging','qaVerified']:
+                                                promoted_to_staging['start'].append(format_datetime(task_status_details['dateCreated']))
+
+                                        if "oldValue" in task_status_details and task_status_details['oldValue'] is not None \
+                                                and "newValue" in task_status_details and task_status_details['newValue'] is not None:
+                                            if task_status_details['oldValue'] in ['psInProgress', 'devInProgress','reviewInProgress','qaInProgress','promotedToStaging','qaVerified'] \
+                                                    and task_status_details['newValue'] in ['open','waitingForUser']:
+                                                product_requirement_cycles += 1
+                                            if task_status_details['oldValue'] in ['reviewInProgress'] \
+                                                    and task_status_details['newValue'] in ['devInProgress']:
+                                                review_cycles += 1
+                                            if task_status_details['oldValue'] in ['waitingForQA','qaInProgress','qaVerified','promotedToStaging'] \
+                                                    and task_status_details['newValue'] in ['devInProgress']:
+                                                qa_cycles += 1
+                                            if task_status_details['oldValue'] in ['devInProgress','reviewInProgress','waitingForQA','qaInProgress','qaVerified','promotedToStaging'] \
+                                                    and task_status_details['newValue'] in ['psInProgress']:
+                                                ps_cycles += 1
+
+                                            if task_status_details['newValue'] in ['closed']:
+                                                release_date = format_datetime(task_status_details['dateCreated'])
+
+                                if "comments" in project_task['transactions'] and project_task['transactions']['comments'] is not None \
+                                        and "revisions" in project_task['transactions'] and project_task['transactions']['revisions'] is not None:
+                                    task_revisions_dict = dict(project_task['transactions']['revisions'])
+                                    task_revision_comments_dict = dict(project_task['transactions']['comments'])
+                                    task_revisions_list = list(task_revisions_dict.values())
+
+                                    for i in range(len(task_revisions_list)):
+                                        revision_id = "D"+str(task_revisions_list[i]['id'])
+                                        task_revision_detail = task_revisions_dict.get(revision_id)
+                                        revision_title = task_revision_detail['fields']['title']
+                                        revision_author_details = phabricator.conduit.User.get_user_details(phabricator.conduit.User(), task_revision_detail['fields']['authorPHID'])
+                                        revision_author_name = ""
+                                        if revision_author_details is not None and revision_author_details != "" and type(revision_author_details) == dict:
+                                            revision_author_name = revision_author_details['realName']
+                                        else:
+                                            revision_author_name = task_revision_detail['fields']['authorPHID']
+                                        revision_details_to_be_exported = revision_id + " : "+revision_title
+                                        revision_author_details_to_be_exported = revision_id + " : "+revision_author_name
+                                        task_revision_details.append(revision_details_to_be_exported)
+                                        task_revision_author_details.append(revision_author_details_to_be_exported)
+                                        task_revision_comment_detail = task_revision_comments_dict.get(revision_id)
+                                        total_comment_details = revision_id + " : Total(" + str(task_revision_comment_detail['count'])+"), Done("+str(task_revision_comment_detail['done'])+")"
+                                        task_revision_total_comment_details.append(total_comment_details)
+                                        task_revision_reviewer_details = dict(task_revision_comment_detail['author_wise_count'])
+                                        task_revision_reviewer_comment_detail = revision_id + " : "
+                                        reviewer_comments = []
+                                        for reviewer_phid,reviewer_comments_count in task_revision_reviewer_details.items():
+                                            revision_reviewer_details = phabricator.conduit.User.get_user_details(phabricator.conduit.User(), reviewer_phid)
+                                            revision_reviewer_name = ""
+                                            if revision_reviewer_details is not None and revision_reviewer_details != "" and type(revision_reviewer_details) == dict:
+                                                revision_reviewer_name = revision_reviewer_details['realName']
+                                            else:
+                                                revision_reviewer_name = reviewer_phid
+                                            reviewer_comment = revision_reviewer_name + "(" +str(reviewer_comments_count)+")"
+                                            reviewer_comments.append(reviewer_comment)
+                                        task_revision_reviewer_comment_detail += ", ".join(reviewer_comments)
+                                        task_revision_reviewer_comment_details.append(task_revision_reviewer_comment_detail)
+
+                            task_details_to_be_exported['Waiting For User Start Dates'] = "; ".join(waiting_for_user['start'])
+                            task_details_to_be_exported['Waiting For User End Dates'] = "; ".join(waiting_for_user['end'])
+                            task_details_to_be_exported['PS Start Dates'] = "; ".join(ps_in_progress['start'])
+                            task_details_to_be_exported['PS End Dates'] = "; ".join(ps_in_progress['end'])
+                            task_details_to_be_exported['Dev Start Dates'] = "; ".join(dev_in_progress['start'])
+                            task_details_to_be_exported['Dev End Dates'] = "; ".join(dev_in_progress['end'])
+                            task_details_to_be_exported['CR Start Dates'] = "; ".join(review_in_progress['start'])
+                            task_details_to_be_exported['CR End Dates'] = "; ".join(review_in_progress['end'])
+                            task_details_to_be_exported['QA Start Dates'] = "; ".join(qa_in_progress['start'])
+                            task_details_to_be_exported['QA End Dates'] = "; ".join(qa_in_progress['end'])
+                            task_details_to_be_exported['Promoted to Staging Start Dates'] = "; ".join(promoted_to_staging['start'])
+                            task_details_to_be_exported['Promoted to Staging End Dates'] = "; ".join(promoted_to_staging['end'])
+                            task_details_to_be_exported['Release Date'] = release_date
+                            task_details_to_be_exported['Product Requirement Cycles'] = str(product_requirement_cycles)
+                            task_details_to_be_exported['PS Cycles'] = str(ps_cycles)
+                            task_details_to_be_exported['Review Cycles'] = str(review_cycles)
+                            task_details_to_be_exported['QA Cycles'] = str(qa_cycles)
+                            task_details_to_be_exported['Task Revisions'] = "; ".join(task_revision_details)
+                            task_details_to_be_exported['Task Revision Authors'] = "; ".join(task_revision_author_details)
+                            task_details_to_be_exported['Code Review Comments By Reviewers'] = "; ".join(task_revision_reviewer_comment_details)
+                            task_details_to_be_exported['Code Review Comments By Revisions'] = "; ".join(task_revision_total_comment_details)
+
+                    write_in_csv('reports/'+project['details']['fields']['name']+" - "+report_date+".csv", task_details_to_be_exported)
+                    report_to_be_exported.append(task_details_to_be_exported)
 
 
 def export_json(project_task_map):
-    with open('reports/export.json', 'w') as f:
-        json.dump(project_task_map, f, indent=4, sort_keys=True)
+    try:
+        with open('reports/export.json', 'x') as f:
+            json.dump(project_task_map, f, indent=4, sort_keys=True)
+    except FileExistsError as e:
+        with open('reports/export.json', 'w') as f:
+            json.dump(project_task_map, f, indent=4, sort_keys=True)
 
 
 def main(argv):
@@ -73,7 +237,7 @@ def main(argv):
         print_help()
         phabricator.session.close()
         sys.exit(2)
-    for opt,arg in  opts:
+    for opt,arg in opts:
         if opt == '-h':
             print_help()
             phabricator.session.close()
@@ -85,7 +249,6 @@ def main(argv):
             if maniphest_tasks is not None and str(maniphest_tasks).strip() != '':
                 maniphest_task_ids = str(maniphest_tasks).split(',')
     print("Project name provided:", project_name)
-    print("Task id provided:", maniphest_task_ids)
     conduit = phabricator.conduit
     if project_name is not None and project_name != '':
         try:
@@ -240,6 +403,7 @@ def main(argv):
 
             projects[project_detail['phid']]['tasks'] = maniphest_tasks
             export_json(projects)
+            construct_csv()
 
 
 if __name__ == '__main__':
@@ -247,7 +411,6 @@ if __name__ == '__main__':
         print("Phabricator host url or conduit api token not provided or not correct. Please update config.py")
         sys.exit(2)
 
-    #main(sys.argv[1:])
-    construct_csv('temp')
+    main(sys.argv[1:])
     phabricator.session.close()
 
