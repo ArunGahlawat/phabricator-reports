@@ -1,4 +1,4 @@
-import sys,getopt, config, requests, phabricator.conduit, json
+import sys,getopt, config, requests, phabricator.conduit, json,time
 
 
 def print_help():
@@ -12,9 +12,22 @@ def print_help():
     print("generate_report.py -h for usage help")
 
 
+def format_datetime(epoch):
+    return time.strftime(config.DATE_TIME_FORMAT,time.localtime(epoch))
+
+
 def construct_csv(project_task_map):
     report_to_be_exported = {}
-    with open('reports/export.json','r') as f:
+    statuses_to_ignore = config.STATUSES_TO_IGNORE
+    subtype_to_ignore = config.SUBTYPE_TO_IGNORE
+    waiting_for_user = {'start': [], 'end': []}
+    problem_solving = {'start': [], 'end': []}
+    dev_in_progress = {'start': [], 'end': []}
+    review_in_progress = {'start': [], 'end': []}
+    qa_in_progress = {'start': [], 'end': []}
+    promoted_to_staging = {'start': [], 'end': []}
+
+    with open('reports/export.json', 'r') as f:
         projects = json.load(f)
     if projects is not None and issubclass(type(projects),dict) and len(projects) > 0:
         for project in dict(projects).values():
@@ -23,21 +36,23 @@ def construct_csv(project_task_map):
                     if "details" in project_task and project_task['details'] is not None:
                         project_task_details = project_task['details']
                         if project_task_details is not None and type(project_task_details) == dict:
+                            if "status" in project_task_details and project_task_details["status"] is not None and project_task_details["status"] in statuses_to_ignore:
+                                continue
+                            if "status" in project_task_details and project_task_details["status"] is not None and project_task_details["status"] in statuses_to_ignore:
+                                continue
                             report_to_be_exported['Phab ID'] = project_task_details['objectName']
                             report_to_be_exported['Title'] = project_task_details['title']
                             report_to_be_exported['Task URL'] = project_task_details['uri']
                             report_to_be_exported['Assigned To'] = phabricator.conduit.User.search(project_task_details['ownerPHID'])
+                            waiting_for_user['start'].append(format_datetime(project_task_details['dateCreated']))
                     if "transactions" in project and project['transactions'] is not None:
-                        if "statuses" in  project['transactions'] and  project['transactions']['statuses'] is not None:
-                            for task_status in  list(project['transactions']['statuses']):
-                                task_status = dict(task_status)
-                                #if task_status['oldValue'] is not None and task_status['oldValue']
-
-
-
-
-
-
+                        if "statuses" in project['transactions'] and  project['transactions']['statuses'] is not None:
+                            task_statuses = list(project['transactions']['statuses'])
+                            for i in range(len(task_statuses),0,-1):
+                                task_status_details = task_statuses[i]
+                                if "oldValue" in task_status_details and task_status_details['oldValue'] is not None:
+                                    if task_status_details['oldValue'] in ['open','waitingForUser']:
+                                        waiting_for_user['end'].append(format_datetime(task_status_details['dateCreated']))
 
 
 def export_json(project_task_map):
@@ -131,7 +146,7 @@ def main(argv):
                 revision_phids_to_be_queried = {}
                 for task_transaction_detail in task_transaction_list:
                     if task_transaction_detail is not None and type(task_transaction_detail) == dict \
-                            and task_transaction_detail['transactionType'] in ['core:edge','status']:
+                            and task_transaction_detail['transactionType'] in ['core:edge','status','core:subtype']:
                         if task_transaction_detail['transactionType'] == 'core:edge':
                             task_edges = task_transaction_detail['newValue']
                             if task_edges is not None and type(task_edges) == list:
@@ -140,6 +155,8 @@ def main(argv):
                                         revisions_tagged.append(task_edge)
                         elif task_transaction_detail['transactionType'] == 'status':
                             status_updates.append(task_transaction_detail)
+                        elif task_transaction_detail['transactionType'] == 'core:subtype' and maniphest_task_id in maniphest_tasks and "subtype" not in maniphest_tasks[maniphest_task_id]['details']:
+                            maniphest_tasks[maniphest_task_id]['details']['subtype'] = task_transaction_detail['newValue']
 
                 for i in range(len(revisions_tagged)):
                     current_key = 'constraints[phids][' + str(i) + ']'
@@ -208,21 +225,21 @@ def main(argv):
                                                 if "isDone" in inline_comment_details['fields'] and inline_comment_details['fields']['isDone'] == True:
                                                     revision_inlinecomments_done_count += 1
                                     revision_inlinecomments_map[revision_id] = {
-                                        "count":revision_inlinecomments_count,
-                                        "done":revision_inlinecomments_done_count,
-                                        "author_wise_count":revision_comments_author_map
+                                        "count": revision_inlinecomments_count,
+                                        "done": revision_inlinecomments_done_count,
+                                        "author_wise_count": revision_comments_author_map
                                     }
 
                 if maniphest_task_id not in task_transaction_map:
                     task_transaction_map[maniphest_task_id] = {
                         'statuses': status_updates,
                         'revisions': differential_revisions_map,
-                        'comments':revision_inlinecomments_map
+                        'comments': revision_inlinecomments_map
                     }
                 maniphest_tasks[maniphest_task_id]['transactions'] = task_transaction_map[maniphest_task_id]
 
             projects[project_detail['phid']]['tasks'] = maniphest_tasks
-            construct_csv(projects)
+            export_json(projects)
 
 
 if __name__ == '__main__':

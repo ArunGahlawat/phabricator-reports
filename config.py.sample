@@ -1,2 +1,5 @@
 PHABRICATOR_HOST=""
 CONDUIT_TOKEN=""
+DATE_TIME_FORMAT = "%a, %d %b %Y %H:%M:%S +0530"
+STATUSES_TO_IGNORE = ["discarded","notReproducible","duplicate","invalid","escalated","accessGranted"]
+SUBTYPE_TO_IGNORE = ["bug","epic","deadleaf"]
