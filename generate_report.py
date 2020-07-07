@@ -1,5 +1,11 @@
-import sys,getopt, config, requests, phabricator.conduit, json,time,csv,pytz
-from datetime import datetime,date
+import config
+import csv
+import getopt
+import json
+import phabricator.conduit
+import sys
+import time
+from datetime import datetime
 
 
 def print_help():
@@ -14,7 +20,7 @@ def print_help():
 
 
 def format_datetime(epoch):
-    return time.strftime(config.DATE_TIME_FORMAT,time.localtime(int(epoch)))
+    return time.strftime(config.DATE_TIME_FORMAT, time.localtime(int(epoch)))
 
 
 def get_csv_length(filename):
@@ -22,10 +28,10 @@ def get_csv_length(filename):
     try:
         with open(filename, 'r') as csvfile:
             reader = csv.reader(csvfile)
-            for row in reader:
+            for _ in reader:
                 length += 1
             return length
-    except FileNotFoundError as e:
+    except FileNotFoundError:
         f = open(filename, 'x')
         f.close()
         return length
@@ -34,27 +40,27 @@ def get_csv_length(filename):
 def write_in_csv(filename, data, source='dict', write_mode='a'):
     if data is None:
         return
-    len = get_csv_length(filename)
+    length = get_csv_length(filename)
     with open(filename, write_mode) as csvfile:
         if source == 'list':
             writer = csv.writer(csvfile)
         else:
             writer = csv.DictWriter(csvfile, fieldnames=data.keys())
-        if len == 0 and source == 'dict':
+        if length == 0 and source == 'dict':
             writer.writeheader()
         writer.writerow(data)
 
 
 def construct_csv():
-    report_to_be_exported = []
     today = datetime.now()
     report_date = today.strftime(config.DATE_TIME_FORMAT)
     statuses_to_ignore = list(config.STATUSES_TO_IGNORE)
     subtype_to_ignore = list(config.SUBTYPE_TO_IGNORE)
+    report_file_name = ""
 
     with open('reports/export.json', 'r') as f:
         projects = json.load(f)
-    if projects is not None and issubclass(type(projects),dict) and len(projects) > 0:
+    if projects is not None and issubclass(type(projects), dict) and len(projects) > 0:
         for project in dict(projects).values():
             if "tasks" in project and project['tasks'] is not None:
                 for project_task in dict(project['tasks']).values():
@@ -103,10 +109,10 @@ def construct_csv():
                             if "transactions" in project_task and project_task['transactions'] is not None:
                                 if "statuses" in project_task['transactions'] and project_task['transactions']['statuses'] is not None:
                                     task_statuses = list(project_task['transactions']['statuses'])
-                                    for i in range(len(task_statuses)-1, -1, -1):
+                                    for i in range(len(task_statuses) - 1, -1, -1):
                                         task_status_details = task_statuses[i]
                                         if "oldValue" in task_status_details and task_status_details['oldValue'] is not None:
-                                            if task_status_details['oldValue'] in ['open','waitingForUser']:
+                                            if task_status_details['oldValue'] in ['open', 'waitingForUser']:
                                                 waiting_for_user['end'].append(format_datetime(task_status_details['dateCreated']))
                                             elif task_status_details['oldValue'] in ['psInProgress']:
                                                 ps_in_progress['end'].append(format_datetime(task_status_details['dateCreated']))
@@ -116,11 +122,11 @@ def construct_csv():
                                                 review_in_progress['end'].append(format_datetime(task_status_details['dateCreated']))
                                             elif task_status_details['oldValue'] in ['qaInProgress']:
                                                 qa_in_progress['end'].append(format_datetime(task_status_details['dateCreated']))
-                                            elif task_status_details['oldValue'] in ['promotedToStaging','qaVerified']:
+                                            elif task_status_details['oldValue'] in ['promotedToStaging', 'qaVerified']:
                                                 promoted_to_staging['end'].append(format_datetime(task_status_details['dateCreated']))
 
                                         if "newValue" in task_status_details and task_status_details['newValue'] is not None:
-                                            if task_status_details['newValue'] in ['open','waitingForUser']:
+                                            if task_status_details['newValue'] in ['open', 'waitingForUser']:
                                                 waiting_for_user['start'].append(format_datetime(task_status_details['dateCreated']))
                                             elif task_status_details['newValue'] in ['psInProgress']:
                                                 ps_in_progress['start'].append(format_datetime(task_status_details['dateCreated']))
@@ -130,21 +136,21 @@ def construct_csv():
                                                 review_in_progress['start'].append(format_datetime(task_status_details['dateCreated']))
                                             elif task_status_details['newValue'] in ['qaInProgress']:
                                                 qa_in_progress['start'].append(format_datetime(task_status_details['dateCreated']))
-                                            elif task_status_details['newValue'] in ['promotedToStaging','qaVerified']:
+                                            elif task_status_details['newValue'] in ['promotedToStaging', 'qaVerified']:
                                                 promoted_to_staging['start'].append(format_datetime(task_status_details['dateCreated']))
 
                                         if "oldValue" in task_status_details and task_status_details['oldValue'] is not None \
                                                 and "newValue" in task_status_details and task_status_details['newValue'] is not None:
-                                            if task_status_details['oldValue'] in ['psInProgress', 'devInProgress','reviewInProgress','qaInProgress','promotedToStaging','qaVerified'] \
-                                                    and task_status_details['newValue'] in ['open','waitingForUser']:
+                                            if task_status_details['oldValue'] in ['psInProgress', 'devInProgress', 'reviewInProgress', 'qaInProgress', 'promotedToStaging', 'qaVerified'] \
+                                                    and task_status_details['newValue'] in ['open', 'waitingForUser']:
                                                 product_requirement_cycles += 1
                                             if task_status_details['oldValue'] in ['reviewInProgress'] \
                                                     and task_status_details['newValue'] in ['devInProgress']:
                                                 review_cycles += 1
-                                            if task_status_details['oldValue'] in ['waitingForQA','qaInProgress','qaVerified','promotedToStaging'] \
+                                            if task_status_details['oldValue'] in ['waitingForQA', 'qaInProgress', 'qaVerified', 'promotedToStaging'] \
                                                     and task_status_details['newValue'] in ['devInProgress']:
                                                 qa_cycles += 1
-                                            if task_status_details['oldValue'] in ['devInProgress','reviewInProgress','waitingForQA','qaInProgress','qaVerified','promotedToStaging'] \
+                                            if task_status_details['oldValue'] in ['devInProgress', 'reviewInProgress', 'waitingForQA', 'qaInProgress', 'qaVerified', 'promotedToStaging'] \
                                                     and task_status_details['newValue'] in ['psInProgress']:
                                                 ps_cycles += 1
 
@@ -158,33 +164,31 @@ def construct_csv():
                                     task_revisions_list = list(task_revisions_dict.values())
 
                                     for i in range(len(task_revisions_list)):
-                                        revision_id = "D"+str(task_revisions_list[i]['id'])
+                                        revision_id = "D" + str(task_revisions_list[i]['id'])
                                         task_revision_detail = task_revisions_dict.get(revision_id)
                                         revision_title = task_revision_detail['fields']['title']
                                         revision_author_details = phabricator.conduit.User.get_user_details(phabricator.conduit.User(), task_revision_detail['fields']['authorPHID'])
-                                        revision_author_name = ""
                                         if revision_author_details is not None and revision_author_details != "" and type(revision_author_details) == dict:
                                             revision_author_name = revision_author_details['realName']
                                         else:
                                             revision_author_name = task_revision_detail['fields']['authorPHID']
-                                        revision_details_to_be_exported = revision_id + " : "+revision_title
-                                        revision_author_details_to_be_exported = revision_id + " : "+revision_author_name
+                                        revision_details_to_be_exported = revision_id + " : " + revision_title
+                                        revision_author_details_to_be_exported = revision_id + " : " + revision_author_name
                                         task_revision_details.append(revision_details_to_be_exported)
                                         task_revision_author_details.append(revision_author_details_to_be_exported)
                                         task_revision_comment_detail = task_revision_comments_dict.get(revision_id)
-                                        total_comment_details = revision_id + " : Total(" + str(task_revision_comment_detail['count'])+"), Done("+str(task_revision_comment_detail['done'])+")"
+                                        total_comment_details = revision_id + " : Total(" + str(task_revision_comment_detail['count']) + "), Done(" + str(task_revision_comment_detail['done']) + ")"
                                         task_revision_total_comment_details.append(total_comment_details)
                                         task_revision_reviewer_details = dict(task_revision_comment_detail['author_wise_count'])
                                         task_revision_reviewer_comment_detail = revision_id + " : "
                                         reviewer_comments = []
-                                        for reviewer_phid,reviewer_comments_count in task_revision_reviewer_details.items():
+                                        for reviewer_phid, reviewer_comments_count in task_revision_reviewer_details.items():
                                             revision_reviewer_details = phabricator.conduit.User.get_user_details(phabricator.conduit.User(), reviewer_phid)
-                                            revision_reviewer_name = ""
                                             if revision_reviewer_details is not None and revision_reviewer_details != "" and type(revision_reviewer_details) == dict:
                                                 revision_reviewer_name = revision_reviewer_details['realName']
                                             else:
                                                 revision_reviewer_name = reviewer_phid
-                                            reviewer_comment = revision_reviewer_name + "(" +str(reviewer_comments_count)+")"
+                                            reviewer_comment = revision_reviewer_name + "(" + str(reviewer_comments_count) + ")"
                                             reviewer_comments.append(reviewer_comment)
                                         task_revision_reviewer_comment_detail += ", ".join(reviewer_comments)
                                         task_revision_reviewer_comment_details.append(task_revision_reviewer_comment_detail)
@@ -211,15 +215,16 @@ def construct_csv():
                             task_details_to_be_exported['Code Review Comments By Reviewers'] = "; ".join(task_revision_reviewer_comment_details)
                             task_details_to_be_exported['Code Review Comments By Revisions'] = "; ".join(task_revision_total_comment_details)
 
-                    write_in_csv('reports/'+project['details']['fields']['name']+" - "+report_date+".csv", task_details_to_be_exported)
-                    report_to_be_exported.append(task_details_to_be_exported)
+                    report_file_name = 'reports/' + project['details']['fields']['name'] + " - " + report_date + ".csv"
+                    write_in_csv(report_file_name, task_details_to_be_exported)
+    print("Report exported successfully. Check:", report_file_name)
 
 
 def export_json(project_task_map):
     try:
         with open('reports/export.json', 'x') as f:
             json.dump(project_task_map, f, indent=4, sort_keys=True)
-    except FileExistsError as e:
+    except FileExistsError:
         with open('reports/export.json', 'w') as f:
             json.dump(project_task_map, f, indent=4, sort_keys=True)
 
@@ -232,42 +237,44 @@ def main(argv):
     task_transaction_map = {}
 
     try:
-        opts, args = getopt.getopt(argv,"hp:t:",["project=","task="])
+        opts, args = getopt.getopt(argv, "hp:t:", ["project=", "task="])
     except getopt.GetoptError:
         print_help()
         phabricator.session.close()
         sys.exit(2)
-    for opt,arg in opts:
+    for opt, arg in opts:
         if opt == '-h':
             print_help()
             phabricator.session.close()
             sys.exit()
-        elif opt in ("-p","--project"):
+        elif opt in ("-p", "--project"):
             project_name = arg
-        elif opt in ("-t","--task"):
+        elif opt in ("-t", "--task"):
             maniphest_tasks = arg
             if maniphest_tasks is not None and str(maniphest_tasks).strip() != '':
                 maniphest_task_ids = str(maniphest_tasks).split(',')
     print("Project name provided:", project_name)
+    print("Fetching project task details ...")
+
     conduit = phabricator.conduit
     if project_name is not None and project_name != '':
         try:
             project_response = conduit.Project.search(conduit.Project(), project_name)
             project_details = project_response['result']['data']
         except Exception as e:
-            print("Error parsing project response:",repr(e))
+            print("Error parsing project response:", repr(e))
             phabricator.session.close()
             sys.exit(2)
 
         if project_details is None or type(project_details) != list:
-            print('Unexpected response',project_details)
+            print('Unexpected response', project_details)
             phabricator.session.close()
             sys.exit(2)
 
         for project_detail in project_details:
-            projects[project_detail['phid']] = {'details':project_detail}
+            projects[project_detail['phid']] = {'details': project_detail}
             try:
-                project_maniphest_tasks_response = conduit.Maniphest.query(conduit.Maniphest(),project_detail['phid'])
+                project_maniphest_tasks_response = conduit.Maniphest.query(conduit.Maniphest(), project_detail['phid'])
                 project_maniphest_tasks_details = project_maniphest_tasks_response['result']
             except Exception as e:
                 print("Error parsing maniphest task response:", repr(e))
@@ -284,14 +291,14 @@ def main(argv):
                     maniphest_tasks[maniphest_task_details['id']] = {'details': maniphest_task_details}
             task_ids_to_be_queried = {}
             for i in range(len(maniphest_task_ids)):
-                current_key = 'ids['+str(i)+']'
+                current_key = 'ids[' + str(i) + ']'
                 task_ids_to_be_queried[current_key] = maniphest_task_ids[i]
             if task_ids_to_be_queried is None or len(task_ids_to_be_queried) == 0:
                 print('No Tasks in project', project_maniphest_tasks_details)
                 phabricator.session.close()
                 sys.exit(2)
             try:
-                task_transaction_response = conduit.Maniphest.get_transactions(conduit.Maniphest(),task_ids_to_be_queried)
+                task_transaction_response = conduit.Maniphest.get_transactions(conduit.Maniphest(), task_ids_to_be_queried)
                 task_transaction_details = task_transaction_response['result']
             except Exception as e:
                 print("Error parsing task transaction response:", repr(e))
@@ -309,7 +316,7 @@ def main(argv):
                 revision_phids_to_be_queried = {}
                 for task_transaction_detail in task_transaction_list:
                     if task_transaction_detail is not None and type(task_transaction_detail) == dict \
-                            and task_transaction_detail['transactionType'] in ['core:edge','status','core:subtype']:
+                            and task_transaction_detail['transactionType'] in ['core:edge', 'status', 'core:subtype']:
                         if task_transaction_detail['transactionType'] == 'core:edge':
                             task_edges = task_transaction_detail['newValue']
                             if task_edges is not None and type(task_edges) == list:
@@ -341,7 +348,7 @@ def main(argv):
                                     if 'status' in differential_revision_details['fields'] \
                                             and differential_revision_details['fields']['status'] is not None \
                                             and differential_revision_details['fields']['status']['value'] != 'abandoned':
-                                        revision_id = 'D'+str(differential_revision_details['id'])
+                                        revision_id = 'D' + str(differential_revision_details['id'])
                                         if revision_id not in differential_revisions_map:
                                             differential_revisions_map[revision_id] = differential_revision_details
 
@@ -350,10 +357,10 @@ def main(argv):
                                 revision_inlinecomments_count = 0
                                 revision_inlinecomments_done_count = 0
                                 revision_comments_author_map = {}
-                                dummy_comments = ["","OK","OKAY","OKK","SURE","FINE","DONE","HAN","YES","YEAH","HAN","NO","NOPES","NOPE","NOT SURE"]
+                                dummy_comments = ["", "OK", "OKAY", "OKK", "SURE", "FINE", "DONE", "HAN", "YES", "YEAH", "HAN", "NO", "NOPES", "NOPE", "NOT SURE"]
                                 inline_comments_details = None
                                 try:
-                                    inline_comments_response = conduit.Transaction.search(conduit.Transaction(),revision_id)
+                                    inline_comments_response = conduit.Transaction.search(conduit.Transaction(), revision_id)
                                     inline_comments_details = inline_comments_response['result']['data']
                                 except Exception as e:
                                     print("Error parsing inline comments response:", repr(e))
@@ -372,7 +379,7 @@ def main(argv):
                                                 for inline_comment in list(inline_comment_details['comments']):
                                                     if inline_comment is not None and type(inline_comment) == dict:
                                                         inline_comment = dict(inline_comment)
-                                                        if "removed" in inline_comment and inline_comment['removed'] == False \
+                                                        if "removed" in inline_comment and inline_comment['removed'] is False \
                                                                 and "content" in inline_comment and inline_comment['content'] is not None \
                                                                 and "raw" in inline_comment['content'] and inline_comment['content']['raw'] is not None \
                                                                 and str(inline_comment['content']['raw']).strip() != "" \
@@ -385,7 +392,7 @@ def main(argv):
                                                                 else:
                                                                     revision_comments_author_map[inline_comment['authorPHID']] = 1
 
-                                                if "isDone" in inline_comment_details['fields'] and inline_comment_details['fields']['isDone'] == True:
+                                                if "isDone" in inline_comment_details['fields'] and inline_comment_details['fields']['isDone'] is True:
                                                     revision_inlinecomments_done_count += 1
                                     revision_inlinecomments_map[revision_id] = {
                                         "count": revision_inlinecomments_count,
@@ -402,7 +409,9 @@ def main(argv):
                 maniphest_tasks[maniphest_task_id]['transactions'] = task_transaction_map[maniphest_task_id]
 
             projects[project_detail['phid']]['tasks'] = maniphest_tasks
+            print("Exporting report as json with raw data ...")
             export_json(projects)
+            print("Exporting csv report from raw json dump ...")
             construct_csv()
 
 
@@ -413,4 +422,3 @@ if __name__ == '__main__':
 
     main(sys.argv[1:])
     phabricator.session.close()
-
