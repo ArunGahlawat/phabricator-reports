@@ -1,5 +1,6 @@
-PHABRICATOR_HOST=""
-CONDUIT_TOKEN=""
-DATE_TIME_FORMAT = "%a, %d %b %Y %H:%M:%S +0530"
-STATUSES_TO_IGNORE = ["discarded","notReproducible","duplicate","invalid","escalated","accessGranted"]
-SUBTYPE_TO_IGNORE = ["bug","epic","deadleaf"]
+PHABRICATOR_HOST = ""
+CONDUIT_TOKEN = "api-"
+DATE_TIME_FORMAT = "%a %d %b %Y %H:%M"
+DATE_TIME_FORMAT_FILENAME = "%a %d %b %Y %H-%M-%S"
+STATUSES_TO_IGNORE = ["discarded", "notReproducible", "duplicate", "invalid", "escalated", "accessGranted"]
+SUBTYPE_TO_IGNORE = ["bug", "epic", "deadleaf"]

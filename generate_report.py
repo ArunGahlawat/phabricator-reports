@@ -51,9 +51,23 @@ def write_in_csv(filename, data, source='dict', write_mode='a'):
         writer.writerow(data)
 
 
+def format_start_end_dates(start_date_list,end_date_list):
+    export_user_dates = []
+    export_user_date = ""
+    export_user_start_dates = start_date_list
+    export_user_end_dates = end_date_list
+    for i in range(len(export_user_start_dates)):
+        if i < len(export_user_start_dates):
+            export_user_date = export_user_start_dates[i]
+        if i < len(export_user_end_dates):
+            export_user_date += " - " + export_user_end_dates[i]
+        export_user_dates.append(export_user_date)
+    return export_user_dates
+
+
 def construct_csv():
     today = datetime.now()
-    report_date = today.strftime(config.DATE_TIME_FORMAT)
+    report_date = today.strftime(config.DATE_TIME_FORMAT_FILENAME)
     statuses_to_ignore = list(config.STATUSES_TO_IGNORE)
     subtype_to_ignore = list(config.SUBTYPE_TO_IGNORE)
     report_file_name = ""
@@ -91,7 +105,10 @@ def construct_csv():
 
                             task_details_to_be_exported['Phab ID'] = project_task_details['objectName']
                             task_details_to_be_exported['Title'] = project_task_details['title']
-                            task_details_to_be_exported['Task URL'] = project_task_details['uri']
+                            # task_details_to_be_exported['Task URL'] = project_task_details['uri']
+                            task_details_to_be_exported['Comment'] = " "
+                            task_details_to_be_exported['Delivery Date'] = " "
+
                             if "subtype" in project_task_details:
                                 task_details_to_be_exported['Task Type'] = str(project_task_details['subtype']).title()
                             else:
@@ -193,27 +210,21 @@ def construct_csv():
                                         task_revision_reviewer_comment_detail += ", ".join(reviewer_comments)
                                         task_revision_reviewer_comment_details.append(task_revision_reviewer_comment_detail)
 
-                            task_details_to_be_exported['Waiting For User Start Dates'] = "; ".join(waiting_for_user['start'])
-                            task_details_to_be_exported['Waiting For User End Dates'] = "; ".join(waiting_for_user['end'])
-                            task_details_to_be_exported['PS Start Dates'] = "; ".join(ps_in_progress['start'])
-                            task_details_to_be_exported['PS End Dates'] = "; ".join(ps_in_progress['end'])
-                            task_details_to_be_exported['Dev Start Dates'] = "; ".join(dev_in_progress['start'])
-                            task_details_to_be_exported['Dev End Dates'] = "; ".join(dev_in_progress['end'])
-                            task_details_to_be_exported['CR Start Dates'] = "; ".join(review_in_progress['start'])
-                            task_details_to_be_exported['CR End Dates'] = "; ".join(review_in_progress['end'])
-                            task_details_to_be_exported['QA Start Dates'] = "; ".join(qa_in_progress['start'])
-                            task_details_to_be_exported['QA End Dates'] = "; ".join(qa_in_progress['end'])
-                            task_details_to_be_exported['Promoted to Staging Start Dates'] = "; ".join(promoted_to_staging['start'])
-                            task_details_to_be_exported['Promoted to Staging End Dates'] = "; ".join(promoted_to_staging['end'])
+                            task_details_to_be_exported['Waiting For User Dates'] = ";    ".join(format_start_end_dates(waiting_for_user['start'], waiting_for_user['end']))
+                            task_details_to_be_exported['PS Dates'] = ";    ".join(format_start_end_dates(ps_in_progress['start'], ps_in_progress['end']))
+                            task_details_to_be_exported['Dev Dates'] = ";    ".join(format_start_end_dates(dev_in_progress['start'], dev_in_progress['end']))
+                            task_details_to_be_exported['CR Dates'] = ";    ".join(format_start_end_dates(review_in_progress['start'], review_in_progress['end']))
+                            task_details_to_be_exported['QA Dates'] = ";    ".join(format_start_end_dates(qa_in_progress['start'], qa_in_progress['end']))
+                            task_details_to_be_exported['Promoted to Staging Dates'] = ";    ".join(format_start_end_dates(promoted_to_staging['start'], promoted_to_staging['end']))
                             task_details_to_be_exported['Release Date'] = release_date
                             task_details_to_be_exported['Product Requirement Cycles'] = str(product_requirement_cycles)
                             task_details_to_be_exported['PS Cycles'] = str(ps_cycles)
                             task_details_to_be_exported['Review Cycles'] = str(review_cycles)
                             task_details_to_be_exported['QA Cycles'] = str(qa_cycles)
-                            task_details_to_be_exported['Task Revisions'] = "; ".join(task_revision_details)
-                            task_details_to_be_exported['Task Revision Authors'] = "; ".join(task_revision_author_details)
-                            task_details_to_be_exported['Code Review Comments By Reviewers'] = "; ".join(task_revision_reviewer_comment_details)
-                            task_details_to_be_exported['Code Review Comments By Revisions'] = "; ".join(task_revision_total_comment_details)
+                            task_details_to_be_exported['Task Revisions'] = ";    ".join(task_revision_details)
+                            task_details_to_be_exported['Task Revision Authors'] = ";    ".join(task_revision_author_details)
+                            task_details_to_be_exported['Code Review Comments By Reviewers'] = ";    ".join(task_revision_reviewer_comment_details)
+                            task_details_to_be_exported['Revisions Comments'] = ";    ".join(task_revision_total_comment_details)
 
                     report_file_name = 'reports/' + project['details']['fields']['name'] + " - " + report_date + ".csv"
                     write_in_csv(report_file_name, task_details_to_be_exported)
