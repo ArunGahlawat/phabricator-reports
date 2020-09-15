@@ -134,3 +134,4 @@ Config.py
 /reports/*.json
 /reports/*.csv
 /cache/*.json
+.idea/
